@@ -1,0 +1,10 @@
+*
+!/Makefile
+!/Gopkg.lock
+!/Gopkg.toml
+!/*.go
+!/cmd/*.go
+!/app/*.go
+!/eap/*.go
+!/eap/mschapv2/*.go
+!/radius/*.go

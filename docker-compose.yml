@@ -1,0 +1,20 @@
+version: '3'
+services:
+  radius-server:
+    build: .
+    links:
+      - redis
+  radius-test:
+    build: .
+    ports:
+      - 1812:1812/udp
+    command:
+      - serve-radius
+      - --shared-secret
+      - secret
+      - --redis
+      - redis:6379
+    links:
+      - redis
+  redis:
+    image: redis:alpine

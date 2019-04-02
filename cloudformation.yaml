@@ -1,0 +1,106 @@
+Description: github.com/theaaf/radius-server
+Parameters:
+  AllowedRADIUSIngress:
+    Type: AWS::EC2::SecurityGroup::Id
+  Image:
+    Type: String
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+  RADIUSSharedSecret:
+    Type: String
+    NoEcho: true
+  VPC:
+    Type: AWS::EC2::VPC::Id
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: local
+      Vpc: !Ref VPC
+  RADIUSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RADIUSSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: 1812
+          ToPort: 1812
+          SourceSecurityGroupId: !Ref AllowedRADIUSIngress
+      VpcId: !Ref VPC
+  RADIUSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref AWS::StackName
+      ContainerDefinitions:
+        - Command:
+            - serve-radius
+            - --shared-secret
+            - !Ref RADIUSSharedSecret
+            - --redis
+            - !Sub ${Redis.PrimaryEndPoint.Address}:${Redis.PrimaryEndPoint.Port}
+          Image: !Ref Image
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Ref AWS::StackName
+          MemoryReservation: 512
+          Name: radius
+          PortMappings:
+            - ContainerPort: 1812
+      Cpu: 256
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      Memory: 0.5GB
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+  Redis:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      AtRestEncryptionEnabled: true
+      AutomaticFailoverEnabled: true
+      CacheNodeType: cache.m3.medium
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      Engine: redis
+      EngineVersion: '3.2.6'
+      NumCacheClusters: 2
+      ReplicationGroupDescription: redis
+      SecurityGroupIds:
+        - !Ref RedisSecurityGroup
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RedisSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref RADIUSSecurityGroup
+      VpcId: !Ref VPC
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: RedisSubnetGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
